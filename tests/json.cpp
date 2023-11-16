@@ -16,7 +16,7 @@ void assert_equal(const T &a, const U &b, const std::source_location loc=std::so
   }
 }
 
-int main(){
+int main()try{
 
   assert_equal(std::string("hello"), std::string(json("\"hello\"")));
   assert_equal(true, bool(json("true")));
@@ -38,16 +38,25 @@ int main(){
   json j3(R"({
 "a":{
 "b":[
-{"c": [2]}
+{"c": ["Hello Json\nFor C++\n"]},
 ]}})");
 
   assert(j3.is_object());
   assert(j3["a"].is_object());
   assert(j3["a"]["b"].is_array());
   assert(j3["a"]["b"][0ul]["c"].is_array());
-  assert_equal(j3["a"]["b"][0ul]["c"][0ul].operator int(), 2);
+  assert_equal(j3["a"]["b"][0ul]["c"][0ul].operator std::string(), "Hello Json\nFor C++\n");
+  
+  json j4(R"({"a": {"b": [1,2,3]}})");
+  assert_equal(j4.operator std::string(), R"({"a":{"b":[1,2,3]}})");
 
-  // assert_equal(json(R"({"a": "b"})"), json(R"({"a": "b"})"));
+  json j5(R"({"a": "delete"})");
+
+  (j5["a"]=json("{}")).insert("b", json("[1,2,3]"));
+  assert_equal(j5["a"]["b"][1].operator int(), 2);
 
   return 0;
+}catch(xihale::json::exception &e){
+  std::cerr<<e.what()<<std::endl;
+  return 1;
 }

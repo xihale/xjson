@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <format>
 #include <functional>
 #include <ranges>
 #include <cctype>
@@ -39,10 +40,11 @@ namespace json{
     invalid_json
   };
 
-  class exception: public std::exception{
+  class exception{
   public:
     errors err;
-    const char *what()const noexcept override{
+    std::string_view details;
+    const char *why()const noexcept{
       switch(err){
         case not_number: return "not a number";
         case not_boolean: return "not a boolean";
@@ -54,9 +56,12 @@ namespace json{
         case invalid_json: return "invalid json";
       }
     }
+    const std::string what()const noexcept{
+      return std::string(why()) + ": `" + std::string(details) +'`';
+    }
     exception(const exception &)=default;
     exception(exception &&)=default;
-    exception(errors _err):err(_err){}
+    exception(errors _err, std::string_view _details=""):err(_err), details(_details){}
   };
 
   // pay attention to Dangling Reference
@@ -78,8 +83,13 @@ namespace json{
   public:
     parser(const std::string_view &raw):raw(raw){}
 
+    static constexpr char blank[]=" \t\r\n";
+    bool is_blank(char ch){
+      return std::ranges::find(blank, ch)!=std::end(blank);
+    }
+
     auto next(){
-      while(pos<raw.length() && std::isspace(raw[pos])) ++pos;
+      while(pos<raw.length() && is_blank(raw[pos])) ++pos;
       return raw[pos++];
     };
     
@@ -101,15 +111,10 @@ namespace json{
       }
     };
 
-    static constexpr char blank[]=" \t\r\n";
-    bool is_blank(char ch){
-      return std::ranges::find(blank, ch)!=std::end(blank);
-    }
 
     char forward(){
-      auto pos=this->pos;
-      while(pos<raw.length() && is_blank(raw[pos])) ++pos;
-      return raw[pos++];
+      next();
+      return raw[--pos];
     }
 
     auto get_block() ->sv {
@@ -143,16 +148,19 @@ namespace json{
           // string:val
           j.val=umap();
           auto &val=std::get<umap>(j.val);
+          if(forward()=='}') return;
           do{
             // get the string val
             auto key=get_block();
             key=key.substr(1, key.length()-2);
-            if(next()!=':') throw exception(errors::invalid_json);
+            if(next()!=':') throw exception(errors::invalid_json, raw.substr(pos-10, std::max(raw.length()-pos, 20ul)));
+            // get the val
             val.insert({key, json(get_block())});
           }while(next()==',');
         }else if (first=='['){ // array
           j.val=vec();
           auto &val=std::get<vec>(j.val);
+          if(forward()==']') return;
           do{
             val.push_back(json(get_block()));
           }while(next()==',');
@@ -169,19 +177,19 @@ namespace json{
       parser(raw).parse(*this);
     }
     
-    json operator[](const std::string_view &key)const{ // for objects
+    json& operator[](const std::string_view &key){ // for objects
       return std::get<umap>(val).at(key);
     }
 
-    json operator[](const char *key)const{
+    json& operator[](const char *key){
       return std::get<umap>(val).at(key);
     }
 
-    json operator[](const size_t &index)const{ // for arrays
+    json& operator[](const size_t &index){ // for arrays
       return std::get<vec>(val).at(index);
     }
 
-    json operator[](const int &index)const{
+    json& operator[](const int &index){
       return std::get<vec>(val).at(index);
     }
 
@@ -189,11 +197,12 @@ namespace json{
     template <typename T> 
     requires std::is_integral_v<T> && (!std::is_same_v<T, bool>)
     operator T() const {
-      size_t pos=0;
       auto const &raw=std::get<sv>(val);
-      T v=std::stoll(raw.data(), &pos);
-      if(pos!=raw.length())
-        throw exception(not_number);
+      // std::function<>
+      T v=0;
+      auto result = std::from_chars(raw.data(), raw.data()+raw.length(), v);
+      if(result.ec!=std::errc() || result.ptr!=raw.data()+raw.length())
+        throw exception(not_number, raw);
       return v;
     }
 
@@ -204,26 +213,69 @@ namespace json{
       auto const &raw=std::get<sv>(val);
       T v=std::stod(raw.data(), &pos);
       if(pos!=raw.length())
-        throw exception(not_number);
+        throw exception(not_number, raw);
       return v;
     }
 
     operator std::string_view() const {
       auto const &raw=std::get<sv>(val);
-      if(raw[0]!='"' || raw[raw.length()-1]!='"')
-        throw exception(not_string);
+      if(!is_string())
+        throw exception(not_string, raw);
       return raw.substr(1, raw.length()-2);
     }
 
     operator std::string() const {
-      return std::string(std::string_view(*this));
+      if(std::holds_alternative<umap>(val)){ // object to string
+        std::string res="{";
+        auto &raw=std::get<umap>(val);
+        res.reserve(raw.size()*10);
+        for(auto &i: raw)
+          std::format_to(std::back_inserter(res), "\"{}\":{},", i.first, (i.second.is_array() || i.second.is_object())?i.second.operator std::string():std::get<sv>(i.second.val));
+        res.pop_back(); // remove the last ,
+        res+="}";
+        return res;
+      }else if(std::holds_alternative<vec>(val)){ // array to string
+        std::string res="[";
+        auto &raw=std::get<vec>(val);
+        res.reserve(raw.size()*6);
+        for(auto &i: raw)
+          std::format_to(std::back_inserter(res), "{},", (i.is_array() || i.is_object())?i.operator std::string():std::get<sv>(i.val));
+        res.pop_back();
+        res+="]";
+        return res;
+      }
+      // others to string
+      auto raw=std::string_view(*this);
+      static const std::unordered_map<char, char> trans{
+        {'\\', '\\'},
+        {'"', '"'},
+        {'\'', '\''},
+        {'0', '\0'},
+        {'b', '\b'},
+        {'f', '\f'},
+        {'n', '\n'},
+        {'r', '\r'},
+        {'t', '\t'},
+      };
+      size_t pos=0;
+      std::string res;
+      res.reserve(raw.length());
+      while(pos<raw.length()){
+        if(raw[pos]=='\\' && pos+1<raw.length()){
+          res+=trans.at(raw[pos+1]);
+          ++pos;
+        }else
+          res+=raw[pos];
+        ++pos;
+      }
+      return res;
     }
 
     operator bool() const {
       auto const &raw=std::get<sv>(val);
       if(raw=="true") return true;
       if(raw=="false") return false;
-      throw exception(not_boolean);
+      throw exception(not_boolean, raw);
     }
 
     bool is_null() const {
@@ -248,8 +300,38 @@ namespace json{
       return !is_object() && !is_array() && !is_string() && !is_null();
     }
 
-    // TODO: operator==
-    // TODO: to_string
+    template <typename T>
+    json& operator=(const T &other){
+      val=std::forward<T>(other);
+      return *this;
+    }
+
+    // template <typename T>
+    // bool operator==(const T &other) const {
+    //   return std::string(*this)==std::to_string(other);
+    // }
+
+    json& insert(const std::string_view &key, const json &val){
+      if(!is_object())
+        throw exception(not_object, std::string(*this));
+      std::get<umap>(this->val).insert({key, val});
+      return *this;
+    }
+
+    json& insert(const json &val){
+      if(!is_array())
+        throw exception(not_array, std::string(*this));
+      std::get<vec>(this->val).push_back(val);
+      return *this;
+    }
+
+    auto to_string() const {
+      return std::string(*this);
+    }
+
+    auto to_string_view() const {
+      return std::string_view(*this);
+    }
   };
 }
 }
