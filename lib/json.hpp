@@ -229,8 +229,11 @@ namespace json{
     json(const char *raw){
       parser(raw).parse(*this);
     }
-    json(std::string &&raw){
+    json(const std::string &raw){
       parser(raw).parse(*this);
+    }
+    json(std::string &&raw){
+      parser(std::forward<std::string&&>(raw)).parse(*this);
     }
     
     json& operator[](const std::string_view &key){ // for objects

@@ -55,12 +55,15 @@ int main()try{
   (j5["a"]=json("{}")).insert("b", json("[1,2,3]"));
   assert_equal(j5["a"]["b"][1].operator int(), 2);
 
+  std::string temp="aaa";
+
   json j6={
     {"a", 1},
     {"b", std::string("123")},
     {"c", {
       {"d", 3.3}
-    }}
+    }},
+    {"temp", temp},
   };
   assert_equal(j6["c"]["d"].operator double(), 3.3);
   assert_equal(j6["b"].to_string(), "123");
