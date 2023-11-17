@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.8.0)
-project(xjson VERSION 0.1.0 LANGUAGES C CXX)
+project(xjson VERSION 0.1.1 LANGUAGES C CXX)
+
+include_directories(lib)
 
 include(CTest)
 enable_testing()
