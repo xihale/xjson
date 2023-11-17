@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.6.0)
+cmake_minimum_required(VERSION 3.8.0)
 project(xjson VERSION 0.1.0 LANGUAGES C CXX)
 
 include(CTest)
@@ -16,6 +16,9 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
 endforeach()
 
 # addtest
+
+# install to system
+install(FILES lib/json.hpp DESTINATION include/xihale)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

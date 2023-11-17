@@ -55,6 +55,15 @@ int main()try{
   (j5["a"]=json("{}")).insert("b", json("[1,2,3]"));
   assert_equal(j5["a"]["b"][1].operator int(), 2);
 
+  json j6={
+    {"a", 1},
+    {"b", 2},
+    {"c", {
+      {"d", 3.3}
+    }}
+  };
+  assert_equal(j6["c"]["d"].operator double(), 3.3);
+
   return 0;
 }catch(xihale::json::exception &e){
   std::cerr<<e.what()<<std::endl;

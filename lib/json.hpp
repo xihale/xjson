@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <format>
 #include <functional>
+#include <initializer_list>
 #include <ranges>
 #include <cctype>
 #include <charconv>
@@ -19,14 +20,14 @@
 namespace xihale{
 namespace json{
 
-  enum val_t{
-    object,
-    array,
-    string,
-    number,
-    boolean,
-    null,
-  };
+  // enum val_t{
+  //   object,
+  //   array,
+  //   string,
+  //   number,
+  //   boolean,
+  //   null,
+  // };
 
   // TODO: better error hints
   enum errors{
@@ -64,18 +65,18 @@ namespace json{
     exception(errors _err, std::string_view _details=""):err(_err), details(_details){}
   };
 
-  // pay attention to Dangling Reference
+  class json;
+
+  typedef std::unordered_map<std::string_view, json> object_t;
+  typedef std::vector<json> array_t;
+
   class json{
   private:
     using sv=std::string_view;
-    using umap=std::unordered_map<std::string_view, json>;
-    using vec=std::vector<json>;
-    using variant=std::variant<sv, umap, vec>;
+    using variant=std::variant<sv, object_t, array_t, std::string>; // TODO: more types
     variant val;
 
   private:
-    // help to parse
-    json()=default;
   class parser{
   private:
     std::string_view raw;
@@ -146,8 +147,8 @@ namespace json{
         
         if(first=='{'){ // object
           // string:val
-          j.val=umap();
-          auto &val=std::get<umap>(j.val);
+          j.val=object_t();
+          auto &val=std::get<object_t>(j.val);
           if(forward()=='}') return;
           do{
             // get the string val
@@ -158,8 +159,8 @@ namespace json{
             val.insert({key, json(get_block())});
           }while(next()==',');
         }else if (first=='['){ // array
-          j.val=vec();
-          auto &val=std::get<vec>(j.val);
+          j.val=array_t();
+          auto &val=std::get<array_t>(j.val);
           if(forward()==']') return;
           do{
             val.push_back(json(get_block()));
@@ -169,35 +170,55 @@ namespace json{
     };
 
   public:
-    // json()=default;
+    json()=default;
     // json(const json &)=default;
     // json(json &&)=default;
+
+    json(const object_t &obj):val(obj){}
+
+    json(const std::initializer_list<std::pair<std::string_view, json>> &obj){
+      this->val=object_t();
+      auto &val=std::get<object_t>(this->val);
+      for(auto &i:obj)
+        val.insert(i);
+    }
+
+    template<typename T>
+    requires std::is_integral_v<T> || std::is_floating_point_v<T>
+    json(const T &val){
+      this->val=std::to_string(val);
+    }
 
     json(std::string_view raw){ // build from string
       parser(raw).parse(*this);
     }
     
     json& operator[](const std::string_view &key){ // for objects
-      return std::get<umap>(val).at(key);
+      return std::get<object_t>(val).at(key);
     }
 
     json& operator[](const char *key){
-      return std::get<umap>(val).at(key);
+      return std::get<object_t>(val).at(key);
     }
 
     json& operator[](const size_t &index){ // for arrays
-      return std::get<vec>(val).at(index);
+      return std::get<array_t>(val).at(index);
     }
 
     json& operator[](const int &index){
-      return std::get<vec>(val).at(index);
+      return std::get<array_t>(val).at(index);
+    }
+
+    std::string_view get_raw() const {
+      if(std::holds_alternative<sv>(val)) return std::get<sv>(val);
+      return std::get<std::string>(val);
     }
 
     // Max type support: long long
     template <typename T> 
     requires std::is_integral_v<T> && (!std::is_same_v<T, bool>)
     operator T() const {
-      auto const &raw=std::get<sv>(val);
+      auto raw=get_raw();
       // std::function<>
       T v=0;
       auto result = std::from_chars(raw.data(), raw.data()+raw.length(), v);
@@ -210,36 +231,44 @@ namespace json{
     requires std::is_floating_point_v<T>
     operator T() const {
       size_t pos=0;
-      auto const &raw=std::get<sv>(val);
+      auto raw=get_raw();
       T v=std::stod(raw.data(), &pos);
       if(pos!=raw.length())
         throw exception(not_number, raw);
       return v;
     }
 
+    operator  const object_t&() const {
+      return std::get<object_t>(val);
+    }
+
+    operator const array_t&() const {
+      return std::get<array_t>(val);
+    }
+
     operator std::string_view() const {
-      auto const &raw=std::get<sv>(val);
+      auto raw=get_raw();
       if(!is_string())
         throw exception(not_string, raw);
       return raw.substr(1, raw.length()-2);
     }
 
     operator std::string() const {
-      if(std::holds_alternative<umap>(val)){ // object to string
+      if(std::holds_alternative<object_t>(val)){ // object to string
         std::string res="{";
-        auto &raw=std::get<umap>(val);
+        auto &raw=std::get<object_t>(val);
         res.reserve(raw.size()*10);
         for(auto &i: raw)
-          std::format_to(std::back_inserter(res), "\"{}\":{},", i.first, (i.second.is_array() || i.second.is_object())?i.second.operator std::string():std::get<sv>(i.second.val));
+          std::format_to(std::back_inserter(res), "\"{}\":{},", i.first, (i.second.is_array() || i.second.is_object())?i.second.operator std::string():i.second.get_raw());
         res.pop_back(); // remove the last ,
         res+="}";
         return res;
-      }else if(std::holds_alternative<vec>(val)){ // array to string
+      }else if(std::holds_alternative<array_t>(val)){ // array to string
         std::string res="[";
-        auto &raw=std::get<vec>(val);
+        auto &raw=std::get<array_t>(val);
         res.reserve(raw.size()*6);
         for(auto &i: raw)
-          std::format_to(std::back_inserter(res), "{},", (i.is_array() || i.is_object())?i.operator std::string():std::get<sv>(i.val));
+          std::format_to(std::back_inserter(res), "{},", (i.is_array() || i.is_object())?i.operator std::string():i.get_raw());
         res.pop_back();
         res+="]";
         return res;
@@ -272,14 +301,14 @@ namespace json{
     }
 
     operator bool() const {
-      auto const &raw=std::get<sv>(val);
+      auto raw=get_raw();
       if(raw=="true") return true;
       if(raw=="false") return false;
       throw exception(not_boolean, raw);
     }
 
     bool is_null() const {
-      auto const &raw=std::get<sv>(val);
+      auto raw=get_raw();
       return raw=="null";
     }
 
@@ -292,7 +321,7 @@ namespace json{
     }
 
     bool is_string() const {
-      auto const &raw=std::get<sv>(val);
+      auto raw=get_raw();
       return raw[0]=='"' && raw[raw.length()-1]=='"';
     }
 
@@ -314,14 +343,14 @@ namespace json{
     json& insert(const std::string_view &key, const json &val){
       if(!is_object())
         throw exception(not_object, std::string(*this));
-      std::get<umap>(this->val).insert({key, val});
+      std::get<object_t>(this->val).insert({key, val});
       return *this;
     }
 
     json& insert(const json &val){
       if(!is_array())
         throw exception(not_array, std::string(*this));
-      std::get<vec>(this->val).push_back(val);
+      std::get<array_t>(this->val).push_back(val);
       return *this;
     }
 
@@ -331,6 +360,13 @@ namespace json{
 
     auto to_string_view() const {
       return std::string_view(*this);
+    }
+
+    auto get_object(){
+      return std::get<object_t>(val);
+    }
+    auto get_array(){
+      return std::get<array_t>(val);
     }
   };
 }
