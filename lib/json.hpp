@@ -5,31 +5,26 @@
 #include <algorithm>
 #include <cstddef>
 #include <format>
+#include <forward_list>
 #include <functional>
 #include <initializer_list>
+#include <memory>
+#include <optional>
 #include <ranges>
 #include <cctype>
 #include <charconv>
 #include <concepts>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 
 namespace xihale{
 namespace json{
 
-  // enum val_t{
-  //   object,
-  //   array,
-  //   string,
-  //   number,
-  //   boolean,
-  //   null,
-  // };
-
-  // TODO: better error hints
   enum errors{
     not_number,
     not_boolean,
@@ -72,8 +67,11 @@ namespace json{
 
   class json{
   private:
+    using ull=unsigned long long;
+    using ll=long long;
+    using nullptr_t=std::nullptr_t;
     using sv=std::string_view;
-    using variant=std::variant<sv, object_t, array_t, std::string>; // TODO: more types
+    using variant=std::variant<sv, object_t, array_t, std::string, double, bool, ull, ll, nullptr_t>;
     variant val;
 
   private:
@@ -131,17 +129,43 @@ namespace json{
       return raw.substr(begin, pos-begin);
     };
 
-      auto trim_left(std::string_view &raw){
-        auto pos=raw.find_first_not_of(' ');
-        if(pos!=std::string_view::npos) raw=raw.substr(pos, raw.length()-pos);
+      auto trim(std::string_view &raw){
+        auto bpos=raw.find_first_not_of(' ');
+        auto epos=raw.find_last_not_of(' ');
+        if(bpos!=std::string_view::npos) raw=raw.substr(bpos, epos-bpos+1);
       }
 
       void parse(json &j){
-        trim_left(raw);
+        trim(raw);
         size_t pos=0;
         auto first=next();
-        if(first!='{' && first!='[') // not object or array
-          return void(j.val=raw);
+        if(first!='{' && first!='['){ // not object or array
+          // judges
+          // null
+          if(raw=="null") j.val=nullptr_t();
+          // number
+          else if(raw=="true") j.val=true;
+          else if(raw=="false") j.val=false;
+          else if(raw[0]=='"' && raw[raw.length()-1]=='"')
+            j.val=raw.substr(1, raw.length()-2);
+          else{ // number
+            // ll
+            std::from_chars_result res;
+            if(raw.find('.')!=std::string_view::npos) // double
+              res=j.turn_to<double>(raw);
+            else if(raw[0]=='-') // ll
+              res=j.turn_to<ll>(raw);
+            else // ull
+              res=j.turn_to<ull>(raw);
+            if(res.ec!=std::errc() || res.ptr!=raw.data()+raw.length()){
+              // throw exception(errors::invalid_json, raw.substr(pos-10, std::max(raw.length()-pos, 20ul)));
+              // maybe it's a string
+              j.val=raw;
+            }
+            
+          }
+          return;
+        }
         // object array string
         using ssize_t=unsigned char;
         
@@ -156,40 +180,56 @@ namespace json{
             key=key.substr(1, key.length()-2);
             if(next()!=':') throw exception(errors::invalid_json, raw.substr(pos-10, std::max(raw.length()-pos, 20ul)));
             // get the val
-            val.insert({key, json(get_block())});
+            val.insert({key, std::move(json(get_block()))});
           }while(next()==',');
         }else if (first=='['){ // array
           j.val=array_t();
           auto &val=std::get<array_t>(j.val);
           if(forward()==']') return;
           do{
-            val.push_back(json(get_block()));
+            val.push_back(std::move(json(get_block())));
           }while(next()==',');
         }
       }
     };
 
+    template<typename T>
+    std::from_chars_result turn_to(const sv &raw){
+      T v;
+      auto res=std::from_chars(raw.data(), raw.data()+raw.length(), v);
+      val=v;
+      return res;
+    }
+
+    std::string_view get_raw() const {
+      if(std::holds_alternative<sv>(val))
+        return std::get<sv>(val);
+      return std::get<std::string>(val).data();
+    }
+
   public:
     json()=default;
-    // json(const json &)=default;
-    // json(json &&)=default;
-
-    json(const object_t &obj):val(obj){}
 
     json(const std::initializer_list<std::pair<std::string_view, json>> &obj){
       this->val=object_t();
       auto &val=std::get<object_t>(this->val);
       for(auto &i:obj)
-        val.insert(i);
+        val.insert({i.first, std::move(i.second)});
     }
 
     template<typename T>
     requires std::is_integral_v<T> || std::is_floating_point_v<T>
     json(const T &val){
-      this->val=std::to_string(val);
+      *this=std::move(json(std::to_string(val)));
     }
 
     json(std::string_view raw){ // build from string
+      parser(raw).parse(*this);
+    }
+    json(const char *raw){
+      parser(raw).parse(*this);
+    }
+    json(std::string &&raw){
       parser(raw).parse(*this);
     }
     
@@ -209,33 +249,18 @@ namespace json{
       return std::get<array_t>(val).at(index);
     }
 
-    std::string_view get_raw() const {
-      if(std::holds_alternative<sv>(val)) return std::get<sv>(val);
-      return std::get<std::string>(val);
-    }
-
-    // Max type support: long long
     template <typename T> 
     requires std::is_integral_v<T> && (!std::is_same_v<T, bool>)
     operator T() const {
-      auto raw=get_raw();
-      // std::function<>
-      T v=0;
-      auto result = std::from_chars(raw.data(), raw.data()+raw.length(), v);
-      if(result.ec!=std::errc() || result.ptr!=raw.data()+raw.length())
-        throw exception(not_number, raw);
-      return v;
+      if(std::holds_alternative<ll>(val))
+        return std::get<ll>(val);
+      return std::get<ull>(val);
     }
 
     template <typename T>
     requires std::is_floating_point_v<T>
     operator T() const {
-      size_t pos=0;
-      auto raw=get_raw();
-      T v=std::stod(raw.data(), &pos);
-      if(pos!=raw.length())
-        throw exception(not_number, raw);
-      return v;
+      return std::get<double>(val);
     }
 
     operator  const object_t&() const {
@@ -246,91 +271,110 @@ namespace json{
       return std::get<array_t>(val);
     }
 
-    operator std::string_view() const {
-      auto raw=get_raw();
-      if(!is_string())
-        throw exception(not_string, raw);
-      return raw.substr(1, raw.length()-2);
+    // explicit: prevent implicit conversion(std::string -> string_view)
+    explicit operator std::string_view() const {
+      return get_raw();
     }
 
     operator std::string() const {
+      std::string res;
       if(std::holds_alternative<object_t>(val)){ // object to string
-        std::string res="{";
         auto &raw=std::get<object_t>(val);
         res.reserve(raw.size()*10);
-        for(auto &i: raw)
-          std::format_to(std::back_inserter(res), "\"{}\":{},", i.first, (i.second.is_array() || i.second.is_object())?i.second.operator std::string():i.second.get_raw());
-        res.pop_back(); // remove the last ,
-        res+="}";
-        return res;
+        res.push_back('{');
+        for(auto &i: raw){
+          std::format_to(std::back_inserter(res), "\"{}\":", i.first);
+          if(i.second.is_string())
+            std::format_to(std::back_inserter(res), "\"{}\",", i.second.get_raw());
+          else
+            std::format_to(std::back_inserter(res), "{},", std::string(i.second));
+        }
+        // res.pop_back(); // remove the last ,
+        // res.push_back('}')
+        res.back()='}';
       }else if(std::holds_alternative<array_t>(val)){ // array to string
-        std::string res="[";
         auto &raw=std::get<array_t>(val);
         res.reserve(raw.size()*6);
-        for(auto &i: raw)
-          std::format_to(std::back_inserter(res), "{},", (i.is_array() || i.is_object())?i.operator std::string():i.get_raw());
-        res.pop_back();
-        res+="]";
-        return res;
-      }
-      // others to string
-      auto raw=std::string_view(*this);
-      static const std::unordered_map<char, char> trans{
-        {'\\', '\\'},
-        {'"', '"'},
-        {'\'', '\''},
-        {'0', '\0'},
-        {'b', '\b'},
-        {'f', '\f'},
-        {'n', '\n'},
-        {'r', '\r'},
-        {'t', '\t'},
-      };
-      size_t pos=0;
-      std::string res;
-      res.reserve(raw.length());
-      while(pos<raw.length()){
-        if(raw[pos]=='\\' && pos+1<raw.length()){
-          res+=trans.at(raw[pos+1]);
+        res.push_back('[');
+        for(auto &i: raw){
+          if(i.is_string())
+            std::format_to(std::back_inserter(res), "\"{}\",", i.get_raw());
+          else
+            std::format_to(std::back_inserter(res), "{},", std::string(i));
+        }
+        // res.pop_back();
+        // res+="]";
+        res.back()=']';
+      }else if (is_string()){
+        // others to string
+        auto raw=std::string_view(*this);
+        static const std::unordered_map<char, char> trans{
+          {'\\', '\\'},
+          {'"', '"'},
+          {'\'', '\''},
+          {'0', '\0'},
+          {'b', '\b'},
+          {'f', '\f'},
+          {'n', '\n'},
+          {'r', '\r'},
+          {'t', '\t'},
+        };
+        size_t pos=0;
+        res.reserve(raw.length());
+        while(pos<raw.length()){
+          if(raw[pos]=='\\' && pos+1<raw.length()){
+            res+=trans.at(raw[pos+1]);
+            ++pos;
+          }else
+            res+=raw[pos];
           ++pos;
-        }else
-          res+=raw[pos];
-        ++pos;
+        }
+      }
+      else{
+        auto func=[&res](const decltype(val) &val){
+          using T=std::decay_t<decltype(val)>;
+          if constexpr(std::is_same_v<T, double>)
+            res=std::to_string(std::get<double>(val));
+          else if constexpr(std::is_same_v<T, bool>)
+            res=std::get<bool>(val)?"true":"false";
+          else if constexpr(std::is_same_v<T, nullptr_t>)
+            res="null";
+          else if(std::holds_alternative<ull>(val))
+            res=std::to_string(std::get<ull>(val));
+          else
+            res=std::to_string(std::get<ll>(val));
+        };
+        std::visit(func, val);
       }
       return res;
     }
 
     operator bool() const {
-      auto raw=get_raw();
-      if(raw=="true") return true;
-      if(raw=="false") return false;
-      throw exception(not_boolean, raw);
+      return std::get<bool>(val);
     }
 
     bool is_null() const {
-      auto raw=get_raw();
-      return raw=="null";
+      return std::holds_alternative<nullptr_t>(val);
     }
 
     bool is_object() const {
-      return val.index()==1;
+      return std::holds_alternative<object_t>(val);
     }
 
     bool is_array() const {
-      return val.index()==2;
+      return std::holds_alternative<array_t>(val);
     }
 
     bool is_string() const {
-      auto raw=get_raw();
-      return raw[0]=='"' && raw[raw.length()-1]=='"';
+      return std::holds_alternative<std::string_view>(val) || std::holds_alternative<std::string>(val);
     }
 
     bool is_number(){
-      return !is_object() && !is_array() && !is_string() && !is_null();
+      return std::holds_alternative<double>(val) || std::holds_alternative<ull>(val) || std::holds_alternative<ll>(val);
     }
 
     template <typename T>
-    json& operator=(const T &other){
+    json& operator=(T other){
       val=std::forward<T>(other);
       return *this;
     }

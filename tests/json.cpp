@@ -57,12 +57,13 @@ int main()try{
 
   json j6={
     {"a", 1},
-    {"b", 2},
+    {"b", std::string("123")},
     {"c", {
       {"d", 3.3}
     }}
   };
   assert_equal(j6["c"]["d"].operator double(), 3.3);
+  assert_equal(j6["b"].to_string(), "123");
 
   return 0;
 }catch(xihale::json::exception &e){
