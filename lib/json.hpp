@@ -81,12 +81,11 @@ namespace json{
 
   class json{
   private:
-    using ull=unsigned long long;
     using ll=long long;
     using nullptr_t=std::nullptr_t;
     using string_view=std::string_view;
     using string=std::string;
-    using variant=std::variant<string_view, object_t, array_t, string, double, bool, nullptr_t>;
+    using variant=std::variant<string_view, object_t, array_t, string, double, ll, bool, nullptr_t>;
     variant val;
 
   private:
@@ -165,7 +164,10 @@ namespace json{
             j.val=raw.substr(1, raw.length()-2);
           else{ // number
             std::from_chars_result res;
+            j.val=(double)0;
             res=std::from_chars(raw.data(), raw.data()+raw.length(), (double&)j.val);
+            ll i=std::get<double>(j.val);
+            if(std::get<double>(j.val)-i<1e-6) j.val=i;
             if(res.ec!=std::errc() || res.ptr!=raw.data()+raw.length()){
               // throw exception(errors::invalid_json, raw.substr(pos-10, std::max(raw.length()-pos, 20ul)));
               // maybe it's a String
@@ -176,7 +178,6 @@ namespace json{
           return;
         }
         // object array string
-        using ssize_t=unsigned char;
         
         if(first=='{'){ // object
           // string:val
@@ -189,14 +190,14 @@ namespace json{
             key=key.substr(1, key.length()-2);
             if(next()!=':') throw exception(errors::invalid_json, raw.substr(pos-10, std::max(raw.length()-pos, 20ul)));
             // get the val
-            val.insert({key, std::move(json(get_block()))});
+            val.insert({key, json(get_block())});
           }while(next()==',');
         }else if (first=='['){ // array
           j.val=array_t();
           auto &val=std::get<array_t>(j.val);
           if(forward()==']') return;
           do{
-            val.push_back(std::move(json(get_block())));
+            val.push_back(json(get_block()));
           }while(next()==',');
         }
       }
@@ -226,7 +227,7 @@ namespace json{
     requires std::is_integral_v<T> || std::is_floating_point_v<T>
     json(const T &val){
       // *this=std::move(json(std::to_string(val)));
-      this->val=val;
+      this->val=static_cast<double>(val);
     }
 
     json(std::string_view raw){ // build from string
@@ -258,9 +259,16 @@ namespace json{
       return std::get<array_t>(val).at(index);
     }
 
-    template <Number T> 
+    template <typename T>
+    requires std::is_floating_point_v<T>
     operator T() const {
       return static_cast<T>(std::get<double>(val));
+    }
+
+    template <typename T>
+    requires std::is_integral_v<T>
+    operator T() const {
+      return static_cast<T>(std::get<ll>(val));
     }
 
     operator const object_t&() const {
@@ -334,6 +342,8 @@ namespace json{
       else{
         if(std::holds_alternative<double>(val))
           res=std::to_string(std::get<double>(val));
+        else if(std::holds_alternative<ll>(val))
+          res=std::to_string(std::get<ll>(val));
         else if(std::holds_alternative<bool>(val))
           res=std::get<bool>(val)?"true":"false";
         else if(std::holds_alternative<nullptr_t>(val))
@@ -363,7 +373,7 @@ namespace json{
     }
 
     bool is_number(){
-      return std::holds_alternative<double>(val);
+      return std::holds_alternative<double>(val) || std::holds_alternative<ll>(val);
     }
 
     template <typename T>
