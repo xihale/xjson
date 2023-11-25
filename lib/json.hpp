@@ -320,17 +320,17 @@ namespace json{
     //   if(bpos!=npos) raw.remove_prefix(bpos);
     // }
 
+    static constexpr bool is_blank[256]{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
     static char next(string_view &raw){
-      char ch;
-      while((ch=raw.front())==' ' || ch=='\n' || ch=='\t' || ch=='\r') raw.remove_prefix(1);
+      while(is_blank[static_cast<uint8_t>(raw.front())]) raw.remove_prefix(1);
       raw.remove_prefix(1);
-      return ch;
+      return *(raw.data()-1);
     }
 
     static char forward(string_view &raw){
-      char ch;
-      while((ch=raw.front())==' ' || ch=='\n' || ch=='\t' || ch=='\r') raw.remove_prefix(1);
-      return ch;
+      bool vis=is_blank[static_cast<uint8_t>(raw.front())];
+      while(is_blank[static_cast<uint8_t>(raw.front())]) raw.remove_prefix(1);
+      return *(raw.data()-vis);
     }
 
 
@@ -361,7 +361,6 @@ namespace json{
           auto key=std::string(bpos, raw.begin()-1);
           next(raw); // :
           o.insert({key, parse(raw)});
-          skip(raw);
           if(forward(raw)==',') next(raw);
         }
       }else if(begin=='['){
@@ -373,7 +372,6 @@ namespace json{
         // raw=string_view(raw.begin()-1, raw.end());
         while(forward(raw)!=']'){
           a.push_back(parse(raw));
-          skip(raw);
           if(forward(raw)==',') next(raw);
         }
         next(raw); // ]
