@@ -191,7 +191,8 @@ namespace json{
         }
         // res.pop_back(); // remove the last ,
         // res.push_back('}')
-        res.back()='}';
+        if(res.back()==',') res.back()='}';
+        else res.push_back('}');
       }else if(std::holds_alternative<array_t>(val)){ // array to string
         auto &raw=std::get<array_t>(val);
         res.reserve(raw.size()*6);
@@ -204,7 +205,8 @@ namespace json{
         }
         // res.pop_back();
         // res+="]";
-        res.back()=']';
+        if(res.back()==',') res.back()=']';
+        else res.push_back(']');
       }else if (is_string()){
         // others to string
         auto raw=std::string_view(*this);
@@ -359,18 +361,22 @@ namespace json{
           auto key=std::string(bpos, raw.begin()-1);
           next(raw); // :
           o.insert({key, parse(raw)});
-          skip(raw), next(raw);
+          skip(raw);
+          if(forward(raw)==',') next(raw);
         }
       }else if(begin=='['){
         // char ch;
         v=array_t{};
         auto &a=std::get<array_t>(v);
         a.reserve(4);
-        raw=string_view(raw.begin()-1, raw.end());
-        while(next(raw)!=']'){
+        // if(forward(raw)==']'){ next(raw); return j; }
+        // raw=string_view(raw.begin()-1, raw.end());
+        while(forward(raw)!=']'){
           a.push_back(parse(raw));
           skip(raw);
+          if(forward(raw)==',') next(raw);
         }
+        next(raw); // ]
       }else if(begin=='"'){
         auto bpos=raw.begin();
         skip_until(raw, '"');
