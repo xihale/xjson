@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8.0)
-project(xjson VERSION 0.1.2 LANGUAGES C CXX)
+project(xjson VERSION 0.2.0 LANGUAGES C CXX)
 
 include_directories(lib)
 
@@ -8,13 +8,22 @@ enable_testing()
 
 set(CMAKE_CXX_STANDARD 20)
 
+# effective cpp -W
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Weffc++")
+
 # 循环添加 tests 文件夹下的所有文件, 编译
 file(GLOB TEST_SOURCES tests/*.cpp)
 foreach(TEST_SOURCE ${TEST_SOURCES})
   get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
   add_executable(${TEST_NAME} ${TEST_SOURCE})
-  # target_link_libraries(${TEST_NAME} xsocket)
   add_test(${TEST_NAME} ${TEST_NAME})
+endforeach()
+
+# benchmark
+file(GLOB TEST_SOURCES benchmark/*.cpp)
+foreach(TEST_SOURCE ${TEST_SOURCES})
+  get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
+  add_executable(${TEST_NAME} ${TEST_SOURCE})
 endforeach()
 
 # addtest
