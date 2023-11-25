@@ -19,13 +19,6 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
   add_test(${TEST_NAME} ${TEST_NAME})
 endforeach()
 
-# benchmark
-file(GLOB TEST_SOURCES benchmark/*.cpp)
-foreach(TEST_SOURCE ${TEST_SOURCES})
-  get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
-  add_executable(${TEST_NAME} ${TEST_SOURCE})
-endforeach()
-
 # addtest
 
 # install to system

@@ -4,6 +4,10 @@ The core functions are available.
 
 It has many problems now, so it's not recommended to use it in the production environment.
 
+## Todo
+
+- [ ] boost perf
+
 ## Update
 
 ### benchmark for 0.1 to 0.2
@@ -12,11 +16,9 @@ It has many problems now, so it's not recommended to use it in the production en
 -----------------------------------------------------
 Benchmark           Time             CPU   Iterations
 -----------------------------------------------------
-Old           3958671 ns      3947425 ns          180
-New            277975 ns       275689 ns         2701
+Old           4616645 ns      4578780 ns          159
+New            977329 ns       973994 ns          667
 ```
-
-## Todo
 
 ## Usage
 
