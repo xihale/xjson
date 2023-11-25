@@ -65,13 +65,28 @@ namespace json{
   typedef std::unordered_map<std::string_view, json> object_t;
   typedef std::vector<json> array_t;
 
+  // Concepts
+  template<typename T>
+    concept Number=(std::is_integral_v<T> || std::is_floating_point_v<T>) && !std::is_same_v<T, bool>;
+  template<typename T>
+    concept Boolean=std::is_same_v<T, bool>;
+  template<typename T>
+    concept Null=std::is_same_v<T, std::nullptr_t>;
+  template<typename T>
+    concept String=std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view>;
+  template<typename T>
+    concept Object=std::is_same_v<T, object_t>;
+  template<typename T>
+    concept Array=std::is_same_v<T, array_t>;
+
   class json{
   private:
     using ull=unsigned long long;
     using ll=long long;
     using nullptr_t=std::nullptr_t;
-    using sv=std::string_view;
-    using variant=std::variant<sv, object_t, array_t, std::string, double, bool, ull, ll, nullptr_t>;
+    using string_view=std::string_view;
+    using string=std::string;
+    using variant=std::variant<string_view, object_t, array_t, string, double, bool, nullptr_t>;
     variant val;
 
   private:
@@ -116,7 +131,7 @@ namespace json{
       return raw[--pos];
     }
 
-    auto get_block() ->sv {
+    auto get_block() ->string_view {
       auto k=get_skip(next());
       size_t begin=pos-1;
       if(k<3) skip(k);
@@ -149,17 +164,11 @@ namespace json{
           else if(raw[0]=='"' && raw[raw.length()-1]=='"')
             j.val=raw.substr(1, raw.length()-2);
           else{ // number
-            // ll
             std::from_chars_result res;
-            if(raw.find('.')!=std::string_view::npos) // double
-              res=j.turn_to<double>(raw);
-            else if(raw[0]=='-') // ll
-              res=j.turn_to<ll>(raw);
-            else // ull
-              res=j.turn_to<ull>(raw);
+            res=std::from_chars(raw.data(), raw.data()+raw.length(), (double&)j.val);
             if(res.ec!=std::errc() || res.ptr!=raw.data()+raw.length()){
               // throw exception(errors::invalid_json, raw.substr(pos-10, std::max(raw.length()-pos, 20ul)));
-              // maybe it's a string
+              // maybe it's a String
               j.val=raw;
             }
             
@@ -193,22 +202,18 @@ namespace json{
       }
     };
 
-    template<typename T>
-    std::from_chars_result turn_to(const sv &raw){
-      T v;
-      auto res=std::from_chars(raw.data(), raw.data()+raw.length(), v);
-      val=v;
-      return res;
-    }
-
     std::string_view get_raw() const {
-      if(std::holds_alternative<sv>(val))
-        return std::get<sv>(val);
+      if(std::holds_alternative<string_view>(val))
+        return std::get<string_view>(val);
       return std::get<std::string>(val).data();
     }
 
   public:
     json()=default;
+    json(const json &)=default;
+    json(json &&)=default;
+    json &operator=(const json &)=default;
+    json &operator=(json &&)=default;
 
     json(const std::initializer_list<std::pair<std::string_view, json>> &obj){
       this->val=object_t();
@@ -217,10 +222,11 @@ namespace json{
         val.insert({i.first, std::move(i.second)});
     }
 
-    template<typename T>
+    template<Number T>
     requires std::is_integral_v<T> || std::is_floating_point_v<T>
     json(const T &val){
-      *this=std::move(json(std::to_string(val)));
+      // *this=std::move(json(std::to_string(val)));
+      this->val=val;
     }
 
     json(std::string_view raw){ // build from string
@@ -233,7 +239,7 @@ namespace json{
       parser(raw).parse(*this);
     }
     json(std::string &&raw){
-      parser(std::forward<std::string&&>(raw)).parse(*this);
+      parser(std::forward<std::string>(raw)).parse(*this);
     }
     
     json& operator[](const std::string_view &key){ // for objects
@@ -252,21 +258,12 @@ namespace json{
       return std::get<array_t>(val).at(index);
     }
 
-    template <typename T> 
-    requires std::is_integral_v<T> && (!std::is_same_v<T, bool>)
+    template <Number T> 
     operator T() const {
-      if(std::holds_alternative<ll>(val))
-        return std::get<ll>(val);
-      return std::get<ull>(val);
+      return static_cast<T>(std::get<double>(val));
     }
 
-    template <typename T>
-    requires std::is_floating_point_v<T>
-    operator T() const {
-      return std::get<double>(val);
-    }
-
-    operator  const object_t&() const {
+    operator const object_t&() const {
       return std::get<object_t>(val);
     }
 
@@ -279,6 +276,7 @@ namespace json{
       return get_raw();
     }
 
+    // TODO: try no use rescue
     operator std::string() const {
       std::string res;
       if(std::holds_alternative<object_t>(val)){ // object to string
@@ -334,20 +332,12 @@ namespace json{
         }
       }
       else{
-        auto func=[&res](const decltype(val) &val){
-          using T=std::decay_t<decltype(val)>;
-          if constexpr(std::is_same_v<T, double>)
-            res=std::to_string(std::get<double>(val));
-          else if constexpr(std::is_same_v<T, bool>)
-            res=std::get<bool>(val)?"true":"false";
-          else if constexpr(std::is_same_v<T, nullptr_t>)
-            res="null";
-          else if(std::holds_alternative<ull>(val))
-            res=std::to_string(std::get<ull>(val));
-          else
-            res=std::to_string(std::get<ll>(val));
-        };
-        std::visit(func, val);
+        if(std::holds_alternative<double>(val))
+          res=std::to_string(std::get<double>(val));
+        else if(std::holds_alternative<bool>(val))
+          res=std::get<bool>(val)?"true":"false";
+        else if(std::holds_alternative<nullptr_t>(val))
+          res="null";
       }
       return res;
     }
@@ -373,7 +363,7 @@ namespace json{
     }
 
     bool is_number(){
-      return std::holds_alternative<double>(val) || std::holds_alternative<ull>(val) || std::holds_alternative<ll>(val);
+      return std::holds_alternative<double>(val);
     }
 
     template <typename T>
@@ -409,10 +399,10 @@ namespace json{
       return std::string_view(*this);
     }
 
-    auto get_object(){
+    auto &get_object() const {
       return std::get<object_t>(val);
     }
-    auto get_array(){
+    auto &get_array() const {
       return std::get<array_t>(val);
     }
   };
