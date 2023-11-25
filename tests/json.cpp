@@ -1,4 +1,4 @@
-#include "../lib/json.hpp"
+#include <json.hpp>
 #include <format>
 #include <stdexcept>
 #include <string>
@@ -17,6 +17,8 @@ void assert_equal(const T &a, const U &b, const std::source_location loc=std::so
 }
 
 int main()try{
+
+  // assert_equal(json(R"({"id":22645196,"name":"Bad Apple!!"})")["name"].to_string(), std::string("Bad Apple!!"));
 
   assert_equal(std::string("hello"), std::string(json("\"hello\"")));
   assert_equal(true, bool(json("true")));
@@ -44,8 +46,8 @@ int main()try{
   assert(j3.is_object());
   assert(j3["a"].is_object());
   assert(j3["a"]["b"].is_array());
-  assert(j3["a"]["b"][0ul]["c"].is_array());
-  assert_equal(j3["a"]["b"][0ul]["c"][0ul].operator std::string(), "Hello Json\nFor C++\n");
+  assert(j3["a"]["b"][0]["c"].is_array());
+  assert_equal(j3["a"]["b"][0]["c"][0].operator std::string(), "Hello Json\nFor C++\n");
   
   json j4(R"({"a": {"b": [1,2,3]}})");
   assert_equal(j4.operator std::string(), R"({"a":{"b":[1,2,3]}})");
