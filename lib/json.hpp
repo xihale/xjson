@@ -62,7 +62,7 @@ namespace json{
 
   class json;
 
-  typedef std::unordered_map<std::string_view, json> object_t;
+  typedef std::unordered_map<std::string, json> object_t;
   typedef std::vector<json> array_t;
 
   // Concepts
@@ -79,133 +79,23 @@ namespace json{
   template<typename T>
     concept Array=std::is_same_v<T, array_t>;
 
+  namespace parser{
+    static json parse(std::string_view &);
+  };
+
   class json{
   private:
     using ll=long long;
     using nullptr_t=std::nullptr_t;
     using string_view=std::string_view;
     using string=std::string;
-    using variant=std::variant<string_view, object_t, array_t, string, double, ll, bool, nullptr_t>;
+    using variant=std::variant<object_t, array_t, string, double, ll, bool, nullptr_t>;
     variant val;
 
   private:
-  class parser{
-  private:
-    std::string_view raw;
-    size_t pos=0;
-  public:
-    parser(const std::string_view &raw):raw(raw){}
-
-    static constexpr char blank[]=" \t\r\n";
-    bool is_blank(char ch){
-      return std::ranges::find(blank, ch)!=std::end(blank);
-    }
-
-    auto next(){
-      while(pos<raw.length() && is_blank(raw[pos])) ++pos;
-      return raw[pos++];
-    };
-    
-    static constexpr char skip_v[3][3]={{'{','}'}, {'[',']'}, {'"','"'}};
-    auto get_skip(const auto &ch){
-      ssize_t k;
-      for(k=0;k<3;++k)
-        if(ch==skip_v[k][0]) break;
-      return k;
-    };
-
-    void skip(const auto &k){
-      char ch;
-      ssize_t _k;
-      while((ch=next())!=skip_v[k][1]){
-        // check is in skip_v
-        if((_k=get_skip(ch))<3) skip(_k);
-        if(k==2 && ch=='\\') next();
-      }
-    };
-
-
-    char forward(){
-      next();
-      return raw[--pos];
-    }
-
-    auto get_block() ->string_view {
-      auto k=get_skip(next());
-      size_t begin=pos-1;
-      if(k<3) skip(k);
-      else{
-        // next until '}', ']' or ','
-        char ch;
-        while((ch=forward())!='}' && ch!=']' && ch!=',') next();
-        return raw.substr(begin, pos-begin);
-      }
-      return raw.substr(begin, pos-begin);
-    };
-
-      auto trim(std::string_view &raw){
-        auto bpos=raw.find_first_not_of(' ');
-        auto epos=raw.find_last_not_of(' ');
-        if(bpos!=std::string_view::npos) raw=raw.substr(bpos, epos-bpos+1);
-      }
-
-      void parse(json &j){
-        trim(raw);
-        size_t pos=0;
-        auto first=next();
-        if(first!='{' && first!='['){ // not object or array
-          // judges
-          // null
-          if(raw=="null") j.val=nullptr_t();
-          // number
-          else if(raw=="true") j.val=true;
-          else if(raw=="false") j.val=false;
-          else if(raw[0]=='"' && raw[raw.length()-1]=='"')
-            j.val=raw.substr(1, raw.length()-2);
-          else{ // number
-            std::from_chars_result res;
-            j.val=(double)0;
-            res=std::from_chars(raw.data(), raw.data()+raw.length(), (double&)j.val);
-            ll i=std::get<double>(j.val);
-            if(std::get<double>(j.val)-i<1e-6) j.val=i;
-            if(res.ec!=std::errc() || res.ptr!=raw.data()+raw.length()){
-              // throw exception(errors::invalid_json, raw.substr(pos-10, std::max(raw.length()-pos, 20ul)));
-              // maybe it's a String
-              j.val=raw;
-            }
-            
-          }
-          return;
-        }
-        // object array string
-        
-        if(first=='{'){ // object
-          // string:val
-          j.val=object_t();
-          auto &val=std::get<object_t>(j.val);
-          if(forward()=='}') return;
-          do{
-            // get the string val
-            auto key=get_block();
-            key=key.substr(1, key.length()-2);
-            if(next()!=':') throw exception(errors::invalid_json, raw.substr(pos-10, std::max(raw.length()-pos, 20ul)));
-            // get the val
-            val.insert({key, json(get_block())});
-          }while(next()==',');
-        }else if (first=='['){ // array
-          j.val=array_t();
-          auto &val=std::get<array_t>(j.val);
-          if(forward()==']') return;
-          do{
-            val.push_back(json(get_block()));
-          }while(next()==',');
-        }
-      }
-    };
+    friend json parser::parse(std::string_view &);
 
     std::string_view get_raw() const {
-      if(std::holds_alternative<string_view>(val))
-        return std::get<string_view>(val);
       return std::get<std::string>(val).data();
     }
 
@@ -220,8 +110,10 @@ namespace json{
       this->val=object_t();
       auto &val=std::get<object_t>(this->val);
       for(auto &i:obj)
-        val.insert({i.first, std::move(i.second)});
+        val.insert({std::string(i.first), std::move(i.second)});
     }
+
+    // TODO: other initialize_list
 
     template<Number T>
     requires std::is_integral_v<T> || std::is_floating_point_v<T>
@@ -231,20 +123,19 @@ namespace json{
     }
 
     json(std::string_view raw){ // build from string
-      parser(raw).parse(*this);
+      *this=parser::parse(raw);
     }
     json(const char *raw){
-      parser(raw).parse(*this);
+      string_view _raw=std::string_view(raw);
+      *this=parser::parse(_raw);
     }
     json(const std::string &raw){
-      parser(raw).parse(*this);
+      string_view _raw=std::string_view(raw);
+      *this=parser::parse(_raw);
     }
     json(std::string &&raw){
-      parser(std::forward<std::string>(raw)).parse(*this);
-    }
-    
-    json& operator[](const std::string_view &key){ // for objects
-      return std::get<object_t>(val).at(key);
+      string_view _raw=std::string_view(raw);
+      *this=parser::parse(_raw);
     }
 
     json& operator[](const char *key){
@@ -369,7 +260,7 @@ namespace json{
     }
 
     bool is_string() const {
-      return std::holds_alternative<std::string_view>(val) || std::holds_alternative<std::string>(val);
+      return std::holds_alternative<std::string>(val);
     }
 
     bool is_number(){
@@ -387,7 +278,7 @@ namespace json{
     //   return std::string(*this)==std::to_string(other);
     // }
 
-    json& insert(const std::string_view &key, const json &val){
+    json& insert(const std::string &key, const json &val){
       if(!is_object())
         throw exception(not_object, std::string(*this));
       std::get<object_t>(this->val).insert({key, val});
@@ -416,5 +307,94 @@ namespace json{
       return std::get<array_t>(val);
     }
   };
+
+  namespace parser{
+
+    using std::string_view;
+    using ll=long long;
+    static auto &npos=string_view::npos;
+    // static void trim_left(string_view &raw){
+    //   auto bpos=raw.find_first_not_of(' ');
+    //   if(bpos!=npos) raw.remove_prefix(bpos);
+    // }
+
+    static char next(string_view &raw){
+      char ch;
+      while((ch=raw.front())==' ' || ch=='\n' || ch=='\t' || ch=='\r') raw.remove_prefix(1);
+      raw.remove_prefix(1);
+      return ch;
+    }
+
+    static char forward(string_view &raw){
+      char ch;
+      while((ch=raw.front())==' ' || ch=='\n' || ch=='\t' || ch=='\r') raw.remove_prefix(1);
+      return ch;
+    }
+
+
+    // static bool forward(string_view &raw, const string_view &judge){
+    //   return raw.starts_with(judge.substr(1));
+    // }
+
+    static void skip_until(string_view &raw, const char &judge){
+      while(next(raw)!=judge);
+    }
+
+    static void skip(string_view &raw){
+      char ch;
+      while(!raw.empty() && (ch=raw[0])!=',' && ch!='}' && ch!=']') raw.remove_prefix(1);
+    }
+
+    static json parse(string_view &raw){
+      json j;
+      auto &v=j.val;
+      auto begin=next(raw);
+      if(begin=='{'){
+        char ch;
+        v=object_t{};
+        auto &o=std::get<object_t>(v);
+        while((ch=next(raw))=='"'){
+          auto bpos=raw.begin();
+          skip_until(raw, '"');
+          auto key=std::string(bpos, raw.begin()-1);
+          next(raw); // :
+          o.insert({key, parse(raw)});
+          skip(raw), next(raw);
+        }
+      }else if(begin=='['){
+        // char ch;
+        v=array_t{};
+        auto &a=std::get<array_t>(v);
+        a.reserve(4);
+        raw=string_view(raw.begin()-1, raw.end());
+        while(next(raw)!=']'){
+          a.push_back(parse(raw));
+          skip(raw);
+        }
+      }else if(begin=='"'){
+        auto bpos=raw.begin();
+        skip_until(raw, '"');
+        v=std::string(bpos, raw.begin()-1);
+      }else if(begin=='t'){ // true
+        v=true, skip(raw);
+      }else if(begin=='f'){ // false
+        v=false, skip(raw);
+      }else if(begin=='n'){ // null
+        v=nullptr, skip(raw);
+      }else{ // number
+        std::from_chars_result res;
+        auto bpos=raw.begin()-1;
+        skip(raw);
+        v=(double)0;
+        res=std::from_chars(bpos, raw.begin(), (double&)v);
+        ll i=std::get<double>(v);
+        if(std::get<double>(v)-i<1e-6) v=i;
+        // if(res.ec!=std::errc() || res.ptr!=raw.begin()){
+        //   v=string_view(bpos, raw.begin()); // regarded as String
+        // }
+      }
+      return j;
+    }
+  }
 }
 }
