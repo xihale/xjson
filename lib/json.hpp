@@ -358,17 +358,18 @@ namespace json{
     //   if(bpos!=npos) raw.remove_prefix(bpos);
     // }
 
-    // fast judge white space
-    static constexpr bool is_blank[256]{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
+    static bool is_blank(const char &ch){
+      return ch==' ' || ch=='\t' || ch=='\n' || ch=='\r';
+    }
     static char next(string_view &raw){
-      while(is_blank[static_cast<uint8_t>(raw.front())]) raw.remove_prefix(1);
+      while(is_blank(static_cast<uint8_t>(raw.front()))) raw.remove_prefix(1);
       raw.remove_prefix(1);
       return *(raw.data()-1);
     }
 
     static char forward(string_view &raw){
-      bool vis=is_blank[static_cast<uint8_t>(raw.front())];
-      while(is_blank[static_cast<uint8_t>(raw.front())]) raw.remove_prefix(1);
+      bool vis=is_blank(static_cast<uint8_t>(raw.front()));
+      while(is_blank(static_cast<uint8_t>(raw.front()))) raw.remove_prefix(1);
       return *(raw.data()-vis);
     }
 
