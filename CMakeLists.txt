@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8.0)
-project(xjson VERSION 0.2.0 LANGUAGES C CXX)
+project(xjson VERSION 0.3.0 LANGUAGES C CXX)
 
 include_directories(lib)
 
