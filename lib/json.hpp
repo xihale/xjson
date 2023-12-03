@@ -25,40 +25,40 @@
 namespace xihale{
 namespace json{
 
-  enum errors{
-    not_number,
-    not_boolean,
-    not_null,
-    not_object,
-    not_array,
-    not_string,
-    not_found,
-    invalid_json
-  };
+  // enum errors{
+  //   not_number,
+  //   not_boolean,
+  //   not_null,
+  //   not_object,
+  //   not_array,
+  //   not_string,
+  //   not_found,
+  //   invalid_json
+  // };
 
-  class exception{
-  public:
-    errors err;
-    std::string_view details;
-    const char *why()const noexcept{
-      switch(err){
-        case not_number: return "not a number";
-        case not_boolean: return "not a boolean";
-        case not_null: return "not null";
-        case not_object: return "not an object";
-        case not_array: return "not an array";
-        case not_string: return "not a string";
-        case not_found: return "not found";
-        case invalid_json: return "invalid json";
-      }
-    }
-    const std::string what()const noexcept{
-      return std::string(why()) + ": `" + std::string(details) +'`';
-    }
-    exception(const exception &)=default;
-    exception(exception &&)=default;
-    exception(errors _err, std::string_view _details=""):err(_err), details(_details){}
-  };
+  // class exception{
+  // public:
+  //   errors err;
+  //   std::string_view details;
+  //   const char *why()const noexcept{
+  //     switch(err){
+  //       case not_number: return "not a number";
+  //       case not_boolean: return "not a boolean";
+  //       case not_null: return "not null";
+  //       case not_object: return "not an object";
+  //       case not_array: return "not an array";
+  //       case not_string: return "not a string";
+  //       case not_found: return "not found";
+  //       case invalid_json: return "invalid json";
+  //     }
+  //   }
+  //   const std::string what()const noexcept{
+  //     return std::string(why()) + ": `" + std::string(details) +'`';
+  //   }
+  //   exception(const exception &)=default;
+  //   exception(exception &&)=default;
+  //   exception(errors _err, std::string_view _details=""):err(_err), details(_details){}
+  // };
 
   class json;
 
@@ -157,13 +157,26 @@ namespace json{
       return std::get<array_t>(val).at(index);
     }
 
+    // const operator[]
+    const json& operator[](const char *key) const {
+      return std::get<object_t>(val).at(key);
+    }
+
+    const json& operator[](const size_t &index) const {
+      return std::get<array_t>(val).at(index);
+    }
+
+    const json& operator[](const int &index) const {
+      return std::get<array_t>(val).at(index);
+    }
+
     template<typename T>
     T& get(){
       return std::get<T>(val);
     }
 
     template<typename T>
-    const T& getc(){
+    const T& getc() const {
       return std::get<T>(val);
     }
 
@@ -298,15 +311,15 @@ namespace json{
     // }
 
     json& insert(const std::string &key, const json &val){
-      if(!is_object())
-        throw exception(not_object, std::string(*this));
+      // if(!is_object())
+      //   throw exception(not_object, std::string(*this));
       std::get<object_t>(this->val).insert({key, val});
       return *this;
     }
 
     json& insert(const json &val){
-      if(!is_array())
-        throw exception(not_array, std::string(*this));
+      // if(!is_array())
+      //   throw exception(not_array, std::string(*this));
       std::get<array_t>(this->val).push_back(val);
       return *this;
     }
@@ -337,6 +350,7 @@ namespace json{
   namespace parser{
 
     using std::string_view;
+    using string=std::string;
     using ll=long long;
     static auto &npos=string_view::npos;
     // static void trim_left(string_view &raw){
@@ -383,7 +397,7 @@ namespace json{
         while((ch=next(raw))=='"'){
           auto bpos=raw.begin();
           skip_until(raw, '"');
-          auto key=std::string(bpos, raw.begin()-1);
+          auto key=string(bpos, raw.begin()-1);
           next(raw); // :
           o.insert({key, parse(raw)});
           if(forward(raw)==',') next(raw);
@@ -403,14 +417,14 @@ namespace json{
       }else if(begin=='"'){
         auto bpos=raw.begin();
         skip_until(raw, '"');
-        v=std::string(bpos, raw.begin()-1);
+        v=string(bpos, raw.begin()-1);
       }else if(begin=='t'){ // true
         v=true, skip(raw);
       }else if(begin=='f'){ // false
         v=false, skip(raw);
       }else if(begin=='n'){ // null
         v=nullptr, skip(raw);
-      }else{ // number
+      }else{ // number or string
         std::from_chars_result res;
         auto bpos=raw.begin()-1;
         skip(raw);
@@ -418,9 +432,9 @@ namespace json{
         res=std::from_chars(bpos, raw.begin(), (double&)v);
         ll i=std::get<double>(v);
         if(std::get<double>(v)-i<1e-6) v=i;
-        // if(res.ec!=std::errc() || res.ptr!=raw.begin()){
-        //   v=string_view(bpos, raw.begin()); // regarded as String
-        // }
+        if(res.ec!=std::errc() || res.ptr!=raw.begin()){
+          v=string(bpos, raw.begin()); // regarded as String
+        }
       }
       return j;
     }
