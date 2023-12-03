@@ -157,6 +157,11 @@ namespace json{
       return std::get<array_t>(val).at(index);
     }
 
+    template<typename T>
+    T& get(){
+      return std::get<T>(val);
+    }
+
     template <typename T>
     requires std::is_floating_point_v<T>
     operator T() const {
