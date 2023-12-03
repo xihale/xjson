@@ -162,6 +162,11 @@ namespace json{
       return std::get<T>(val);
     }
 
+    template<typename T>
+    const T& getc(){
+      return std::get<T>(val);
+    }
+
     template <typename T>
     requires std::is_floating_point_v<T>
     operator T() const {
@@ -314,10 +319,17 @@ namespace json{
       return std::string_view(*this);
     }
 
-    auto &get_object() const {
+    auto &get_object() {
       return std::get<object_t>(val);
     }
-    auto &get_array() const {
+    auto &get_array() {
+      return std::get<array_t>(val);
+    }
+
+    auto &get_const_object() const {
+      return std::get<object_t>(val);
+    }
+    auto &get_const_array() const {
       return std::get<array_t>(val);
     }
   };
