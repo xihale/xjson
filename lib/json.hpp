@@ -66,8 +66,12 @@ namespace json{
   typedef std::vector<json> array_t;
 
   // Concepts
+  // template<typename T>
+    // concept Number=(std::is_integral_v<T> || std::is_floating_point_v<T>) && !std::is_same_v<T, bool>;
   template<typename T>
-    concept Number=(std::is_integral_v<T> || std::is_floating_point_v<T>) && !std::is_same_v<T, bool>;
+    concept Integer=std::is_integral_v<T> && !std::is_same_v<T, bool>;
+  template<typename T>
+    concept Float=std::is_floating_point_v<T> || Integer<T>;
   template<typename T>
     concept Boolean=std::is_same_v<T, bool>;
   template<typename T>
@@ -96,7 +100,7 @@ namespace json{
     friend json parser::parse(std::string_view &);
 
     std::string_view get_raw() const {
-      return std::get<std::string>(val).data();
+      return std::get<string>(val).data();
     }
 
   public:
@@ -110,16 +114,19 @@ namespace json{
       this->val=object_t();
       auto &val=std::get<object_t>(this->val);
       for(auto &i:obj)
-        val.insert({std::string(i.first), std::move(i.second)});
+        val.insert({string(i.first), std::move(i.second)});
     }
 
     // TODO: other initialize_list
 
-    template<Number T>
-    requires std::is_integral_v<T> || std::is_floating_point_v<T>
+    template<Float T>
     json(const T &val){
-      // *this=std::move(json(std::to_string(val)));
       this->val=static_cast<double>(val);
+    }
+
+    template<Integer T>
+    json(const T &val){
+      this->val=static_cast<ll>(val);
     }
 
     json(std::string_view raw){ // build from string
@@ -320,6 +327,7 @@ namespace json{
     //   if(bpos!=npos) raw.remove_prefix(bpos);
     // }
 
+    // fast judge white space
     static constexpr bool is_blank[256]{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
     static char next(string_view &raw){
       while(is_blank[static_cast<uint8_t>(raw.front())]) raw.remove_prefix(1);
